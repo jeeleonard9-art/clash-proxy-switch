@@ -1,0 +1,5 @@
+# 统一换行符，避免 Windows 上提交的 CRLF 让 mac/Linux 用户拿到带 \r 的脚本
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.zip binary
