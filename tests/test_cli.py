@@ -18,6 +18,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -277,6 +278,62 @@ class TestMcpServer(unittest.TestCase):
         # 干净 runner 上没有控制器，应返回结构化降级 JSON 而不是崩
         payload = json.loads(result["content"][0]["text"])
         self.assertIn("code", payload)
+
+
+class TestNonHttpPort(unittest.TestCase):
+    """现实里存在「端口讲的是别的协议」：FlClash 的私有 JSON-RPC 控制口就会这样。
+
+    探测必须判负而不是抛异常，否则一条 status 就能把整个 CLI 打挂。
+    """
+
+    def _fake_jsonrpc_port(self):
+        srv = socket.socket()
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(4)
+        port = srv.getsockname()[1]
+        stop = threading.Event()
+
+        def serve():
+            while not stop.is_set():
+                try:
+                    conn, _ = srv.accept()
+                except OSError:
+                    break
+                try:
+                    conn.recv(2048)
+                    conn.sendall(b'{"method":"getTraffic","data":false,"id":1}\r\n')
+                except OSError:
+                    pass
+                finally:
+                    try:
+                        conn.close()
+                    except OSError:
+                        pass
+
+        threading.Thread(target=serve, daemon=True).start()
+        return srv, port, stop
+
+    def test_probe_returns_none(self):
+        srv, port, stop = self._fake_jsonrpc_port()
+        try:
+            self.assertIsNone(cp.probe_controller("127.0.0.1", port, [""]),
+                              "非 HTTP 对端应判负而不是抛异常")
+            self.assertIsNone(cp.probe_controller("127.0.0.1", port, ["secret"]))
+        finally:
+            stop.set()
+            srv.close()
+
+    def test_cli_degrades_not_crashes(self):
+        srv, port, stop = self._fake_jsonrpc_port()
+        try:
+            code, data, raw, err = run_cli(["status", "--endpoint", f"127.0.0.1:{port}"])
+            self.assertEqual(code, cp.EXIT_NO_CONTROLLER,
+                             f"应降级为 13 而不是内部错误(2): {raw} {err[:200]}")
+            self.assertFalse(data["ok"])
+        finally:
+            stop.set()
+            srv.close()
 
 
 if __name__ == "__main__":

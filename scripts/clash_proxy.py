@@ -18,6 +18,7 @@ clash_proxy.py — 检测本机 Clash 类客户端，并把选中的实例切换
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import platform
@@ -565,7 +566,7 @@ def probe_controller(host, port, secrets):
                 }
         except urlerror.HTTPError as exc:
             tried.append(exc.code)
-        except (urlerror.URLError, OSError, ValueError) as exc:
+        except (urlerror.URLError, OSError, ValueError, http.client.HTTPException) as exc:
             log(f"probe {host}:{port} secret={'(set)' if secret else '(none)'} -> {exc}")
             break
     log(f"port {port} not a clash controller (codes={tried})")
@@ -799,7 +800,7 @@ def get_mode(ctrl):
         res = ctrl_request(ctrl, "GET", "/configs", timeout=4)
         if res and res[0] == 200 and isinstance(res[1], dict):
             return res[1]
-    except (urlerror.URLError, OSError, ValueError) as exc:
+    except (urlerror.URLError, OSError, ValueError, http.client.HTTPException) as exc:
         log(f"get_mode failed: {exc}")
     return None
 
@@ -820,7 +821,7 @@ def set_mode(ctrl, mode):
             if exc.code in (401, 403):
                 last += "（secret 不匹配，检查客户端设置里的密钥）"
                 break
-        except (urlerror.URLError, OSError) as exc:
+        except (urlerror.URLError, OSError, http.client.HTTPException) as exc:
             last = str(exc)
         time.sleep(0.4)
     return False, last
@@ -837,7 +838,7 @@ def verify_egress(mixed_port, timeout=6):
             return {"ok": resp.status in (200, 204, 301, 302), "status": resp.status, "via": proxy}
     except urlerror.HTTPError as exc:
         return {"ok": exc.code in (200, 204), "status": exc.code, "via": proxy}
-    except (urlerror.URLError, OSError) as exc:
+    except (urlerror.URLError, OSError, http.client.HTTPException) as exc:
         return {"ok": False, "status": None, "via": proxy, "error": str(exc)[:160]}
 
 
