@@ -729,6 +729,10 @@ def discover_controller(installs, deep=False, extra_endpoint=None, extra_secret=
 
     把命名管道放在「TCP 失败之后、端口猜测之前」，是因为「配置里写了端口但实际
     没绑定」是真实存在的部署形态（Clash Verge Rev 服务模式），此时管道是唯一入口。
+
+    ``extra_endpoint``（--endpoint）是**严格模式**：一旦显式指定，就只认它，
+    探测失败直接返回 None，绝不静默改用别的客户端——否则用户以为在操作 A，
+    实际被改了 B，属于不可接受的副作用。
     """
     def secrets_of(inst=None):
         cand = [extra_secret]
@@ -739,15 +743,12 @@ def discover_controller(installs, deep=False, extra_endpoint=None, extra_secret=
 
     if extra_endpoint:
         if extra_endpoint.startswith("pipe:"):
-            hit = probe_pipe_controller(extra_endpoint[5:], secrets_of())
-            if hit:
-                return hit
-        else:
-            host, _, port = extra_endpoint.rpartition(":")
-            if port.isdigit():
-                hit = probe_controller(host or "127.0.0.1", int(port), secrets_of())
-                if hit:
-                    return hit
+            return probe_pipe_controller(extra_endpoint[5:], secrets_of())
+        host, _, port = extra_endpoint.rpartition(":")
+        if not port.isdigit():
+            log(f"非法 --endpoint: {extra_endpoint}")
+            return None
+        return probe_controller(host or "127.0.0.1", int(port), secrets_of())
 
     # 1) 配置声明的 TCP 控制器
     for inst in installs:

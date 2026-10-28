@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.9", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: 编译检查（三个脚本 + 测试）
+        run: >
+          python -c "import py_compile;
+          [py_compile.compile(f, doraise=True) for f in
+          ['scripts/clash_proxy.py','scripts/mcp_server.py','scripts/mock_controller.py','tests/test_cli.py']]"
+
+      - name: 单元与集成测试（含 mock 控制器）
+        run: python -m unittest discover -s tests -v
+
+      - name: 零客户端环境必须优雅降级
+        shell: bash
+        run: |
+          set +e
+          python scripts/clash_proxy.py detect > /dev/null 2>&1
+          code=$?
+          echo "detect exit code = $code"
+          if [ "$code" != "10" ] && [ "$code" != "0" ]; then
+            echo "::error::干净 runner 上应返回 10（无客户端）或 0，实际 $code"
+            exit 1
+          fi
+          python scripts/clash_proxy.py doctor > /dev/null 2>&1 && echo "doctor OK"
+
+      - name: CLI 入口可用
+        run: python scripts/clash_proxy.py --help

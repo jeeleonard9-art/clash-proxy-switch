@@ -1,5 +1,7 @@
 # clash-proxy-switch
 
+[![CI](https://github.com/jeeleonard9-art/clash-proxy-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/jeeleonard9-art/clash-proxy-switch/actions/workflows/ci.yml)
+
 让 agent 在需要时把本机 Clash 类客户端切到**全局代理**模式，用完再还原。
 
 一个零依赖的 Python 脚本 + 一份 Skill 描述 + 一个 MCP 适配层，三种形态共用同一套逻辑。
@@ -75,9 +77,27 @@ macOS / Linux 的代码路径（`.app` bundle 启动、`ps`/`lsof` 解析、XDG 
 
 ### 平台要求
 
-- Python 3.8+，**只用标准库**，无需 `pip install`
+- Python 3.9+，**只用标准库**，无需 `pip install`（CI 覆盖 3.9 / 3.12）
 - Windows 10/11、macOS 12+、主流 Linux 发行版
 - 无需管理员权限运行本工具本身（但**启动**需要提权的客户端时会被拒绝，见退出码 12）
+
+## CI 到底验证了什么
+
+`CI` 工作流在 **ubuntu / macos / windows × Python 3.9 / 3.12** 六种组合上跑 19 个测试：
+
+| 验证项 | 说明 |
+|---|---|
+| 路径解析 | `%APPDATA%` 在 mac 落到 `~/Library/Application Support`、在 Linux 落到 `~/.config` |
+| 平台过滤 | macOS 才启用 ClashX、Windows 才启用 CFW，不会互相串台 |
+| 实例聚合 | 同一目录下的 GUI/内核/服务算作一个客户端，服务态进程不计入「运行中」 |
+| 噪声排除 | 安装包、更新器、`%TEMP%` 里的可执行文件不会被当成已安装客户端 |
+| 状态机 | mock 控制器上跑 `ensure → off → restore`，含幂等性与回读校验 |
+| 退出码 | 无客户端返回 10、显式端点失效返回 13、无状态文件返回 17 |
+| MCP 协议 | 握手、`tools/list`、`tools/call`、未知工具报错 |
+
+**CI 不能证明的**：它跑在没装任何 Clash 的干净 runner 上，用 mock 控制器代替真实客户端。
+「macOS 上能不能真的发现并启动 ClashX」只有真机能回答——这就是矩阵里那些 ⚠️ 的含义，
+CI 通过 ≠ 该平台上的真实客户端可用。
 
 ## 安装
 
@@ -192,7 +212,16 @@ python3 scripts/clash_proxy.py doctor            # 环境自检
 
 ## 开发与测试
 
-不需要真实代理也能验证切换逻辑：
+跑完整测试套件（19 个用例，不需要真实代理，也不需要装 Clash）：
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+测试会自己拉起 `mock_controller.py`，覆盖路径解析、平台过滤、实例聚合、状态机与 MCP 协议。
+换系统或改客户端矩阵后先跑它，比手动点客户端靠谱。
+
+手工调试切换逻辑：
 
 ```bash
 python3 scripts/mock_controller.py --port 9099 --secret test --mode rule &
