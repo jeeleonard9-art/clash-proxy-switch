@@ -216,6 +216,36 @@ class TestCliAgainstMock(unittest.TestCase):
         self.assertIsNone(data.get("controller"), "严格模式下不该绑定到其它控制器")
 
 
+    def test_6_ensure_works_without_any_local_client(self):
+        """干净机器（没装 Clash）上，--endpoint 必须照常工作。
+
+        CI 暴露的回归：cmd_ensure 会因为「探测不到本地客户端」直接退出 10，
+        根本没走到显式传入的控制器地址。
+        """
+        import argparse
+        import contextlib
+        import io
+
+        orig = cp.collect_installs
+        cp.collect_installs = lambda **kw: []
+        try:
+            ns = argparse.Namespace(mode="global", client=None, timeout=5, no_launch=True,
+                                    verify=False, deep=False,
+                                    endpoint=f"127.0.0.1:{self.port}", secret="test",
+                                    kill_on_failure=False, pretty=False)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    cp.cmd_ensure(ns)
+            self.assertEqual(ctx.exception.code, 0,
+                             f"无本地客户端时 ensure --endpoint 应成功: {buf.getvalue()[:300]}")
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["mode"], "global")
+            self.assertEqual(payload["client"], "explicit --endpoint")
+        finally:
+            cp.collect_installs = orig
+
+
 class TestZeroClientEnvironment(unittest.TestCase):
     """干净 runner 上没有任何客户端时，必须优雅降级而不是崩。"""
 

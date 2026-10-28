@@ -83,7 +83,7 @@ macOS / Linux 的代码路径（`.app` bundle 启动、`ps`/`lsof` 解析、XDG 
 
 ## CI 到底验证了什么
 
-`CI` 工作流在 **ubuntu / macos / windows × Python 3.9 / 3.12** 六种组合上跑 19 个测试：
+`CI` 工作流在 **ubuntu / macos / windows × Python 3.9 / 3.12** 六种组合上跑 22 个测试：
 
 | 验证项 | 说明 |
 |---|---|
@@ -212,7 +212,7 @@ python3 scripts/clash_proxy.py doctor            # 环境自检
 
 ## 开发与测试
 
-跑完整测试套件（19 个用例，不需要真实代理，也不需要装 Clash）：
+跑完整测试套件（22 个用例，不需要真实代理，也不需要装 Clash）：
 
 ```bash
 python -m unittest discover -s tests -v

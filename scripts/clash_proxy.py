@@ -1229,14 +1229,23 @@ def cmd_status(args):
 def cmd_ensure(args):
     target_mode = args.mode
     installs = collect_installs(deep=args.deep)
-    if not installs:
+
+    # --endpoint 是「我直接给你控制器地址」，此时本机装没装客户端无关紧要，
+    # 不能因为探测不到客户端就提前退出（干净机器 / 容器 / 远程控制器都会踩到）。
+    # `explicit` 也是这时唯一诚实的「被操作对象」描述：不要谎报成某个本机客户端。
+    explicit = {"key": "explicit_endpoint", "label": "explicit --endpoint", "exe": None,
+                "config_info": {}, "pids": [], "running": True, "sources": ["endpoint"],
+                "priority": 0, "exe_exists": False}
+
+    if not installs and not args.endpoint:
         emit({
             "ok": False, "code": EXIT_NOT_FOUND, "degraded": True,
             "message": "未发现任何 Clash 类客户端，无法开启代理；请继续原任务或改用直连方案",
-            "next_actions": ["告知用户本机未安装 Clash 类客户端", "不要反复重试本工具"],
+            "next_actions": ["告知用户本机未安装 Clash 类客户端", "不要反复重试本工具",
+                             "若已有控制器地址，可用 --endpoint host:port 直接指定"],
         }, EXIT_NOT_FOUND, args.pretty)
 
-    if args.client:
+    if args.client and installs:
         filtered = [i for i in installs if i["key"] == args.client or
                     Path(i.get("exe") or "").name.lower() == args.client.lower()]
         if not filtered:
@@ -1255,7 +1264,10 @@ def cmd_ensure(args):
     ctrl = discover_controller(installs, deep=args.deep, extra_endpoint=args.endpoint,
                                extra_secret=args.secret)
     if ctrl:
-        chosen = next((i for i in installs if i["running"]), installs[0])
+        if args.endpoint:
+            chosen = explicit
+        else:
+            chosen = next((i for i in installs if i["running"]), installs[0] if installs else explicit)
         attempts.append({"stage": "reuse", "client": chosen["label"], "endpoint": ctrl["endpoint"],
                          "result": "ok"})
 
