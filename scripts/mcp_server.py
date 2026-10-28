@@ -148,6 +148,15 @@ def dispatch(method, params):
 
 
 def main():
+    # stdout 是 MCP 协议通道，必须强制 UTF-8：
+    # 英文 Windows 的默认管道编码是 cp1252，写中文（工具返回的 message 全是中文）
+    # 会抛 UnicodeEncodeError，整个 server 直接挂掉。
+    for stream in (sys.stdin, sys.stdout):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except (OSError, ValueError):
+                pass
     for raw in sys.stdin:
         line = raw.strip()
         if not line:

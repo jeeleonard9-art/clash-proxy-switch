@@ -17,6 +17,12 @@ jobs:
   test:
     name: ${{ matrix.os }} · py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
+    env:
+      # 所有平台的 Python 都按 UTF-8 处理 IO：
+      # 英文 Windows 默认 cp1252，写中文会 UnicodeEncodeError
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -31,13 +37,34 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: 编译检查（三个脚本 + 测试）
-        run: >
-          python -c "import py_compile;
-          [py_compile.compile(f, doraise=True) for f in
-          ['scripts/clash_proxy.py','scripts/mcp_server.py','scripts/mock_controller.py','tests/test_cli.py']]"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import py_compile
+          for f in ("scripts/clash_proxy.py", "scripts/mcp_server.py",
+                    "scripts/mock_controller.py", "tests/test_cli.py"):
+              py_compile.compile(f, doraise=True)
+          print("compile ok")
+          PY
 
       - name: 单元与集成测试（含 mock 控制器）
-        run: python -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          set +e
+          python -m unittest discover -s tests -v > test.log 2>&1
+          code=$?
+          cat test.log
+          if [ "$code" -ne 0 ]; then
+            # Actions 日志接口需要额外权限；把失败摘要转成 annotation，
+            # 让没有日志权限的调用方也能通过 REST API 读到原因。
+            grep -E '^(FAIL|ERROR):' test.log | head -8 | while IFS= read -r line; do
+              echo "::error title=unittest::${line}"
+            done
+            awk '/^={10,}/{n++} n==1' test.log | tail -14 | while IFS= read -r line; do
+              echo "::error title=traceback::${line}"
+            done
+            exit "$code"
+          fi
 
       - name: 零客户端环境必须优雅降级
         shell: bash
@@ -47,7 +74,7 @@ jobs:
           code=$?
           echo "detect exit code = $code"
           if [ "$code" != "10" ] && [ "$code" != "0" ]; then
-            echo "::error::干净 runner 上应返回 10（无客户端）或 0，实际 $code"
+            echo "::error title=detect::干净 runner 上应返回 10（无客户端）或 0，实际 $code"
             exit 1
           fi
           python scripts/clash_proxy.py doctor > /dev/null 2>&1 && echo "doctor OK"
